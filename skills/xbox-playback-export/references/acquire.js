@@ -4,7 +4,7 @@
   const fail = code => { throw Error(code); };
   const locationUrl = new URL(location.href);
   if (locationUrl.origin !== 'https://www.xbox.com' || locationUrl.username || locationUrl.password ||
-      !/^\/(?:[a-z]{2}-[a-z]{2}\/)?playback(?:\/|$)/i.test(locationUrl.pathname)) {
+      !/^\/(?:[a-z]{2}-[a-z]{2}\/)?(?:xboxplayback|playback)(?:\/|$)/i.test(locationUrl.pathname)) {
     fail('PLAYBACK_WRONG_PAGE');
   }
   const main = document.querySelector('main[data-experience-completed]');

@@ -32,7 +32,11 @@ node skills/xbox-playback-export/scripts/cli.mjs --help
 
 Acquisition prefers installed Edge and always uses the approved normal
 default-profile window through host computer-use/browser tools. The agent handles
-the private JSON handoff; users do not manage JSON or DevTools. If no supported
+opening the normal browser if needed, navigating to
+`https://www.xbox.com/en-US/xboxplayback` in a fresh tab (or reusing an identified
+Playback tab), waiting for readiness and the private JSON handoff after consent.
+Users do not manually open the page or manage JSON/DevTools; they handle sign-in/MFA.
+If no supported
 tool can access that window, stop rather than open a separate profile. The removed
 `--url` mode now returns an explicit error. See [acquisition](acquisition.md) for
 tool support, consent boundaries and evidence limits. For agent-acquired inputs

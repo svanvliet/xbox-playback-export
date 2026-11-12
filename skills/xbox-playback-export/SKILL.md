@@ -20,18 +20,29 @@ Do not silently adapt to a new site build.
    Discover the host's available computer-use/browser tools and read their actual
    capabilities. Prefer Microsoft Edge (`msedge`) whenever installed; use Chrome
    only if Edge is absent or the user explicitly selects Chrome. For acquisition,
-   always use the selected browser's normal default profile and existing signed-in
-   window, never a separate, temporary, guest, incognito, or copied profile.
+   always use the selected browser's normal default profile, opening its normal
+   window through the host's supported tools if needed, never a separate,
+   temporary, guest, incognito, or copied profile.
    Confirm the actual window/profile through the host integration or native UI;
    do not assume a Playwright tool's fresh browser is the user's default profile.
-   Ask and wait for permission before controlling the selected Playback tab or
-   attaching through a supported browser integration. The coding/install request
-   is not browser permission. Prefer computer-use on that tab for bounded extraction
+   Obtain one coherent consent for opening the normal browser, navigating to
+   Playback, and acquiring the presentation; wait before any browser control.
+   Do not ask whether Playback is already open or tell the user to open it.
+   The coding/install request is not browser permission. After consent, discover
+   or open Edge through the computer-use provider. Reuse a positively identified
+   official Playback tab; otherwise open a new tab and navigate directly to
+   `https://www.xbox.com/en-US/xboxplayback`. Do not replace unrelated tabs or
+   unsaved content. Wait for navigation and presentation readiness; only the user
+   handles sign-in/MFA if needed. Do not ask readiness questions that the tools
+   can resolve. Ask only for genuine permission or unresolved profile/account
+   ambiguity. Respect additional native approval prompts.
+   Prefer computer-use for navigation, bounded extraction
    and private download handoff in [references/acquisition.md](references/acquisition.md).
    Once controlled with computer-use, observe/control it only through that server.
    Do not silently attach Playwright/CDP to it.
    If capability is absent, use supported browser tools only if they can access
-   that approved default-profile window. Otherwise stop and explain the missing
+   that approved default-profile window and navigate automatically using the same
+   new-tab/reuse rule. Otherwise stop and explain the missing
    capability; do not launch a separate profile or make the user sign in again.
    Never fall back after user
    denial, missing OS permission, native refusal, policy restrictions, an
@@ -52,7 +63,9 @@ Do not silently adapt to a new site build.
    [references/usage.md](references/usage.md) for prerequisites.
 4. Acquire through the approved default-profile browser tool using the shared
    `references/acquire.js` function and private completed-download handoff in the
-   acquisition reference. The agent chooses a new file in its private job folder,
+   acquisition reference. Validate the official page/build after navigation, not
+   as a prerequisite that requires the page to be already open. A missing initial
+   Playback tab means navigate, not fail. The agent chooses a new file in its private job folder,
    validates it, exports, then removes only its owned temporary input/folder.
    Never launch Playwright against the daily profile directory, copy that profile,
    enable debugging on the user's browser, or expose a debugging listener. Do not

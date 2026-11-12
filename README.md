@@ -92,10 +92,13 @@ download is required. Export records in real time, then encodes.
 
 Ask your agent to export your Xbox Playback. It prefers installed **Microsoft
 Edge (`msedge`)** and always uses the selected browser's **normal default profile
-for acquisition**, keeping your existing sign-in. After permission, it uses
-supported computer-use on your selected loaded tab, or browser tools confirmed
-to access that same default-profile window. Chrome is used only if Edge is absent
-or you explicitly select Chrome.
+for acquisition**, keeping your existing sign-in. After consent covering opening,
+navigation and acquisition, it opens the normal browser if needed and navigates
+to **https://www.xbox.com/en-US/xboxplayback** in a new tab, or reuses a positively
+identified Playback tab. You do not need to open the page or confirm it is already
+open. It uses supported computer-use or browser tools confirmed to access that
+default-profile window; you handle sign-in/MFA if needed. Chrome is used only if
+Edge is absent or you explicitly select Chrome.
 
 There is **no separate-profile acquisition fallback**. If tools cannot access
 your default-profile tab, the agent stops and explains the missing capability

@@ -3,6 +3,25 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { validatePayload } from './payload.mjs';
 
 export const extractionSource = await fs.readFile(new URL('../references/acquire.js', import.meta.url), 'utf8');
+export const playbackUrl = 'https://www.xbox.com/en-US/xboxplayback';
+
+// The caller must supply a consented, confirmed default-profile context.
+export async function preparePlaybackPage(context, { signal, timeoutMs = 30000 } = {}) {
+  signal?.throwIfAborted();
+  for (const page of context.pages()) {
+    try { validatePageUrl(page.url()); } catch { continue; }
+    return page;
+  }
+  const page = await context.newPage();
+  signal?.throwIfAborted();
+  try {
+    await page.goto(playbackUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+  } catch {
+    throw new Error('Playback navigation failed; no alternate browser was opened. The new tab was left open.');
+  }
+  signal?.throwIfAborted();
+  return page;
+}
 
 function parsePresentation(text) {
   if (typeof text !== 'string' || Buffer.byteLength(text) > 2 * 1024 * 1024) {
@@ -86,7 +105,7 @@ export function validatePageUrl(value) {
   let url;
   try { url = new URL(value); } catch { throw new Error('Choose an official HTTPS Xbox Playback page URL.'); }
   if (url.origin !== 'https://www.xbox.com' || url.username || url.password ||
-      !/^\/(?:[a-z]{2}-[a-z]{2}\/)?playback(?:\/|$)/i.test(url.pathname)) {
+      !/^\/(?:[a-z]{2}-[a-z]{2}\/)?(?:xboxplayback|playback)(?:\/|$)/i.test(url.pathname)) {
     throw new Error('Choose an official HTTPS Xbox Playback page URL.');
   }
   return url.href;

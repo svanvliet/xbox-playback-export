@@ -9,15 +9,34 @@ their documented evaluation/download APIs; do not assume common tool names.
 
 Prefer Microsoft Edge (`msedge`) whenever installed. Use Chrome only if Edge is
 absent or explicitly selected by the user. **Acquisition always uses that browser's
-normal default profile**, preferably the existing signed-in Playback tab. Never
+normal default profile**, opening its normal browser window if needed. Never
 create a separate, temporary, guest, incognito, or copied acquisition profile.
 Confirm the actual selected window/profile using the host integration or native
 UI; a tool reporting "Edge" or "Chrome" does not establish default-profile access.
-If the profile cannot be confirmed, ask the user to select it rather than guess.
+Resolve profile selection with supported tools first; ask only when the actual
+selection remains genuinely ambiguous, not whether the browser/page is open.
 
-Prefer available computer-use on that explicitly selected, already-loaded
-Xbox Playback tab. Ask and wait before controlling it. Use only that computer-use
-server for all observations/actions on that browser. If supported by its policy,
+Ask once for consent covering **open the normal browser, navigate to Playback,
+and acquire the presentation**, then wait. Do not ask "is Playback open?" or make
+the user open the browser/page manually. This consent does not bypass native
+approval prompts. After approval, use the computer-use provider's documented
+app discovery/open and tab/navigation actions to:
+
+1. Discover the installed preferred browser and open its normal default-profile
+   window if it is not running. Use only this provider, not shell launchers,
+   AppleScript, another window controller, or CDP.
+2. Reuse a positively identified official Playback tab if present. Otherwise
+   create a fresh tab in that default-profile window and navigate to
+   **`https://www.xbox.com/en-US/xboxplayback`**. Preserve unrelated tabs, history
+   and unsaved content; do not close the user's browser.
+3. Wait for navigation and bounded presentation readiness, leaving login/MFA to
+   the user. Apply the origin/path/build guards after navigation. A missing
+   initial Playback page is a reason to navigate, not ask a readiness question
+   or report an unsupported page.
+4. Acquire with the shared expression and private completed-download handoff.
+
+Use only that computer-use server for all observations/actions on that browser.
+If supported by its policy,
 the agent may run the reviewed expression through its page-evaluation API or
 enter it into the tab's console using that server and handle the Blob download
 through native UI. Never ask the user to paste code or bypass a console warning.
@@ -27,7 +46,8 @@ window; it must not substitute a newly launched isolated session.
 
 Supported browser tools are another path, but require explicit permission before
 attaching or controlling a browser. Use their documented evaluation and completed
-download primitives. Never attach CDP as a backdoor into a computer-use-controlled
+download primitives and the same automatic new-tab/navigation rule. Do not assume
+an initially unrelated tab means acquisition is unavailable. Never attach CDP as a backdoor into a computer-use-controlled
 browser. No copying profiles, exporting cookies, changing the user's launch
 flags, killing their browser, or public debugging listeners.
 
@@ -64,7 +84,7 @@ to an agent-created private job folder outside the repo.
 
 For browser tools that explicitly support a Playwright `page`, local module
 imports, and filesystem access on the **same local host**, and whose `page` is
-confirmed to be the approved default-profile tab, execute this function
+confirmed to belong to the approved default-profile context, execute this function
 through that tool's documented code primitive. Replace `SKILL_DIR` with the actual
 installed absolute directory; do not assume this code primitive exists:
 
@@ -74,13 +94,15 @@ async page => {
   const os = await import('node:os');
   const path = await import('node:path');
   const { pathToFileURL } = await import('node:url');
-  const { savePresentationFromPage } = await import(
+  const { preparePlaybackPage, acquireFromPage, savePresentationFromPage } = await import(
     pathToFileURL(path.join('SKILL_DIR', 'scripts/acquire.mjs')).href);
   const job = await fs.mkdtemp(path.join(os.tmpdir(), 'xbox-playback-acquire-'));
   await fs.chmod(job, 0o700);
   const input = path.join(job, 'presentation.json');
   try {
-    await savePresentationFromPage(page, input);
+    const playbackPage = await preparePlaybackPage(page.context());
+    await acquireFromPage(playbackPage);
+    await savePresentationFromPage(playbackPage, input);
     return { input, jobDirectory: job };
   } catch (error) {
     await fs.rm(job, { recursive: true, force: true });
@@ -89,7 +111,15 @@ async page => {
 }
 ```
 
-The helper installs its download listener before extraction, waits for completion
+`preparePlaybackPage` reuses a positively identified official Playback tab or
+creates a new tab and navigates to the canonical route (30-second navigation
+bound). It never replaces an unrelated tab or launches a browser/profile.
+`acquireFromPage` waits up to ten minutes for the allowlisted presentation, without
+reading login pages. Navigation failures/refusals stop rather than trigger another
+browser. These helpers do not establish profile identity or consent: the host must.
+The host can supply an AbortSignal to cancel further work.
+
+The download helper installs its listener before extraction, waits for completion
 (30-second bound), bounds the stream to 2 MiB, reuses payload validation, writes
 with exclusive creation and mode `0600`, and deletes its browser download.
 It never closes the host's tab. It removes its partial output on failure.
@@ -120,7 +150,9 @@ serialization hooks are not copied/executed. Unused `playbackMusicUri` is omitte
 No Redux/network/session dumps or broadened traversal. Data is limited to 2 MiB,
 bounded arrays/nodes/strings, and validated again before use.
 
-Synthetic tests exercise the real headless browser expression, completed Blob
+Synthetic tests exercise missing-page -> new-tab navigation -> acquisition,
+existing official-tab reuse, preservation of unrelated tabs, navigation refusal
+and cancellation, the real headless browser expression, completed Blob
 download, exact privacy projection, cancellation/timeouts, existing-file
 protection, and stop-without-fallback behavior. The original Fiber path was used
 successfully in the local proof. **Fresh live-site acquisition and cross-host

@@ -13,7 +13,7 @@ import { markerColors } from '../skills/xbox-playback-export/scripts/record.mjs'
 import { main, parseArgs, publishFile } from '../skills/xbox-playback-export/scripts/cli.mjs';
 import { verifyDigest, replaceOnce, patchRoute } from '../skills/xbox-playback-export/scripts/adapter.mjs';
 import { run } from '../skills/xbox-playback-export/scripts/process.mjs';
-import { extractionSource, acquireFromPage, savePresentationFromPage, validatePageUrl } from '../skills/xbox-playback-export/scripts/acquire.mjs';
+import { extractionSource, acquireFromPage, savePresentationFromPage, validatePageUrl, preparePlaybackPage, playbackUrl } from '../skills/xbox-playback-export/scripts/acquire.mjs';
 
 const uri = 'https://assets-xbxweb.xbox.com/synthetic.mp4';
 export function fixture() {
@@ -210,6 +210,8 @@ test('acquisition allowlists every nested field and never invokes extra auth get
   const extract = () => vm.runInNewContext(`(${extractionSource})()`, context);
   const text = extract();
   const exported = JSON.parse(text);
+  context.location.href = 'https://www.xbox.com/en-US/xboxplayback';
+  assert.deepEqual(JSON.parse(extract()), exported);
   assert.deepEqual(Object.keys(exported).sort(), ['chapterCount', 'chapters', 'commonText', 'userInformation', 'chapterCues'].sort());
   assert.equal(exported.userInformation.gamerTag, 'SYNTHETIC');
   assert.ok(!text.includes('PRIVATE_SENTINEL'));
@@ -241,7 +243,8 @@ test('acquisition allowlists every nested field and never invokes extra auth get
 test('Edge remains the default renderer and legacy URL acquisition cannot open a separate profile', async () => {
   for (const url of ['http://www.xbox.com/en-US/playback', 'https://xbox.com/en-US/playback',
     'https://www.xbox.com:8443/playback', 'https://name:secret@www.xbox.com/playback',
-    'https://www.xbox.com/en-US/playback-fake', 'https://evil.invalid/playback']) {
+    'https://www.xbox.com/en-US/playback-fake', 'https://evil.invalid/playback',
+    'https://www.xbox.com/en-US/xboxplayback-fake', 'https://www.xbox.com.evil.invalid/xboxplayback']) {
     assert.throws(() => validatePageUrl(url));
   }
   assert.equal(parseArgs(['export', '--input', 'a.json', '--output', 'a.mp4']).browser, 'msedge');
@@ -253,6 +256,20 @@ test('Edge remains the default renderer and legacy URL acquisition cannot open a
     ['--input', 'a.json', '--consent', 'headed'],
     ['--input', 'a.json', '--url', 'https://www.xbox.com/playback', '--consent', 'headed'],
   ]) assert.throws(() => parseArgs(['export', '--output', 'a.mp4', ...options]), /no longer opens a separate profile/);
+});
+
+test('Playback navigation cancellation and refusal never create a fallback or replace existing tabs', async () => {
+  let opened = 0;
+  const context = {
+    pages: () => [{ url: () => 'https://example.invalid/unsaved' }],
+    newPage: async () => { opened++; return { goto: async () => { throw Error('Native permission denied PRIVATE_SENTINEL'); } }; },
+  };
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(preparePlaybackPage(context, { signal: controller.signal }), { name: 'AbortError' });
+  assert.equal(opened, 0);
+  await assert.rejects(preparePlaybackPage(context), /^Error: Playback navigation failed;/);
+  assert.equal(opened, 1);
 });
 
 test('acquisition stops on refusal/unsupported pages, bounds waiting, and never opens a fallback browser', async () => {
@@ -288,7 +305,7 @@ test('download timeout and mid-flight cancellation remove owned files/listeners 
   }
 });
 
-test('real headless browser acquires synthetic presentation and completes a private Blob download', async t => {
+test('real browser opens missing Playback tab, reuses it, acquires synthetic data and completes a private Blob download', async t => {
   const { chromium } = createRequire(new URL('../skills/xbox-playback-export/package.json', import.meta.url))('playwright');
   const browser = await chromium.launch({ channel: process.env.PLAYBACK_TEST_BROWSER || 'msedge',
     headless: true, args: ['--mute-audio'] });
@@ -296,8 +313,15 @@ test('real headless browser acquires synthetic presentation and completes a priv
   const context = await browser.newContext({ acceptDownloads: true });
   await context.route('**/*', route => route.fulfill({ contentType: 'text/html',
     body: '<html><body><main data-experience-completed></main></body></html>' }));
-  const page = await context.newPage();
-  await page.goto('https://www.xbox.com/en-US/playback');
+  const unrelated = await context.newPage();
+  await unrelated.goto('https://example.invalid/unsaved');
+  const page = await preparePlaybackPage(context);
+  assert.notEqual(page, unrelated);
+  assert.equal(page.url(), playbackUrl);
+  assert.equal(unrelated.url(), 'https://example.invalid/unsaved');
+  assert.equal(context.pages().length, 2);
+  assert.equal(await preparePlaybackPage(context), page);
+  assert.equal(context.pages().length, 2);
   const payload = fixture();
   payload.accessToken = 'PRIVATE_SENTINEL';
   payload.userInformation.refreshToken = 'PRIVATE_SENTINEL';
