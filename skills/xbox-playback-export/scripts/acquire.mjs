@@ -3,19 +3,33 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { validatePayload } from './payload.mjs';
 
 export const extractionSource = await fs.readFile(new URL('../references/acquire.js', import.meta.url), 'utf8');
-export const playbackUrl = 'https://www.xbox.com/en-US/xboxplayback';
+export const playbackUrl = 'https://www.xbox.com/xboxplayback';
 
 // The caller must supply a consented, confirmed default-profile context.
-export async function preparePlaybackPage(context, { signal, timeoutMs = 30000 } = {}) {
+export async function preparePlaybackPage(context, { preferredPage, signal, timeoutMs = 30000 } = {}) {
   signal?.throwIfAborted();
-  for (const page of context.pages()) {
-    try { validatePageUrl(page.url()); } catch { continue; }
+  const pages = context.pages();
+  if (preferredPage && !pages.includes(preferredPage)) {
+    throw new Error('The selected tab does not belong to the approved browser context.');
+  }
+  const ordered = preferredPage ? [preferredPage, ...pages.filter(page => page !== preferredPage)] : pages;
+  for (const page of ordered) {
+    const value = page.url();
+    try { validatePageUrl(value); } catch { continue; }
     return page;
+  }
+  let destination = playbackUrl;
+  for (const page of ordered) {
+    const value = page.url();
+    let url;
+    try { url = officialXboxUrl(value); } catch { continue; }
+    const locale = url.pathname.match(/^\/([a-z]{2,3}(?:-[a-z]{4})?-(?:[a-z]{2}|\d{3}))(?:\/|$)/i)?.[1];
+    if (locale) { destination = `${url.origin}/${locale}/xboxplayback`; break; }
   }
   const page = await context.newPage();
   signal?.throwIfAborted();
   try {
-    await page.goto(playbackUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    await page.goto(destination, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
   } catch {
     throw new Error('Playback navigation failed; no alternate browser was opened. The new tab was left open.');
   }
@@ -101,12 +115,19 @@ export async function savePresentationFromPage(page, destination, { signal, time
   }
 }
 
-export function validatePageUrl(value) {
+function officialXboxUrl(value) {
   let url;
-  try { url = new URL(value); } catch { throw new Error('Choose an official HTTPS Xbox Playback page URL.'); }
-  if (url.origin !== 'https://www.xbox.com' || url.username || url.password ||
-      !/^\/(?:[a-z]{2}-[a-z]{2}\/)?(?:xboxplayback|playback)(?:\/|$)/i.test(url.pathname)) {
-    throw new Error('Choose an official HTTPS Xbox Playback page URL.');
+  try { url = new URL(value); } catch { throw new Error('Not an official HTTPS Xbox page URL.'); }
+  if (url.origin !== 'https://www.xbox.com' || url.username || url.password) {
+    throw new Error('Not an official HTTPS Xbox page URL.');
+  }
+  return url;
+}
+
+export function validatePageUrl(value) {
+  const url = officialXboxUrl(value);
+  if (!/^\/(?:[a-z]{2,3}(?:-[a-z]{4})?-(?:[a-z]{2}|\d{3})\/)?xboxplayback(?:\/|$)/i.test(url.pathname)) {
+    throw new Error('Not an Xbox Playback video route: expected /xboxplayback, not the /playback archive.');
   }
   return url.href;
 }
@@ -117,7 +138,7 @@ export async function acquireFromPage(page, { signal, timeoutMs = 600000 } = {})
   let rejectAbort;
   const aborted = new Promise((_, reject) => { rejectAbort = reject; });
   const abort = () => rejectAbort(new Error(signal?.aborted ?
-    'Acquisition cancelled.' : 'Acquisition timed out; no ready supported presentation was found.'));
+    'Acquisition cancelled.' : 'Acquisition timed out waiting for sign-in, the /xboxplayback video route, or presentation readiness; this does not establish a build change.'));
   combined.addEventListener('abort', abort, { once: true });
   try {
     combined.throwIfAborted();
@@ -126,15 +147,22 @@ export async function acquireFromPage(page, { signal, timeoutMs = 600000 } = {})
         combined.throwIfAborted();
         // Login/MFA belongs to the user. Do not inspect other page contents.
         let isPlayback = false;
-        try { validatePageUrl(page.url()); isPlayback = true; } catch { /* Wait for the selected Playback page. */ }
+        try { validatePageUrl(page.url()); isPlayback = true; } catch {
+          let url;
+          try { url = officialXboxUrl(page.url()); } catch { /* Login/MFA can leave the Xbox origin. */ }
+          if (url && /^\/(?:[a-z]{2,3}(?:-[a-z]{4})?-(?:[a-z]{2}|\d{3})\/)?playback(?:\/|$)/i.test(url.pathname)) {
+            throw new Error('The /playback archive is not the Xbox Playback video experience; navigate to /xboxplayback.');
+          }
+        }
         if (isPlayback) {
           let text;
           try { text = await page.evaluate(`(${extractionSource})()`); }
           catch (error) {
-            if (!/^page\.evaluate: (?:Error: )?PLAYBACK_NOT_READY(?:\n|$)/.test(error.message)) {
+            if (!/^page\.evaluate: (?:Error: )?PLAYBACK_(?:ROUTE_)?NOT_READY(?:\n|$)/.test(error.message)) {
               const code = error.message.match(/(?:^|\n)(?:page\.evaluate: )?(?:Error: )?(PLAYBACK_[A-Z_]+)(?:\n|$)/)?.[1];
               throw new Error(code === 'PLAYBACK_UNSUPPORTED_BUILD' ? 'Unsupported Xbox acquisition build; stopped without inspecting other state.' :
                 code === 'PLAYBACK_INVALID_DATA' ? 'Unsupported presentation data; acquisition stopped.' :
+                  code === 'PLAYBACK_WRONG_PAGE' ? 'The selected tab left the official /xboxplayback video route; acquisition stopped.' :
                   'Browser acquisition failed or the selected tab closed; no alternate browser was opened.');
             }
           }

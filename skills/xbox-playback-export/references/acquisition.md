@@ -25,10 +25,17 @@ app discovery/open and tab/navigation actions to:
 1. Discover the installed preferred browser and open its normal default-profile
    window if it is not running. Use only this provider, not shell launchers,
    AppleScript, another window controller, or CDP.
-2. Reuse a positively identified official Playback tab if present. Otherwise
-   create a fresh tab in that default-profile window and navigate to
-   **`https://www.xbox.com/en-US/xboxplayback`**. Preserve unrelated tabs, history
-   and unsaved content; do not close the user's browser.
+2. Reuse a positively identified official **`/xboxplayback` video tab**, including
+   localized variants. `/playback` is a distinct archive and must not be reused
+   for extraction. Otherwise create a fresh tab in that default-profile window.
+   Prefer the selected official Xbox tab's observed locale, e.g.
+   `https://www.xbox.com/fr-FR/xboxplayback`; if it has no locale, use another
+   observed Xbox tab's locale. With no known locale, navigate to
+   **`https://www.xbox.com/xboxplayback`** and follow the site's redirects.
+   Use observed navigation/redirects, never invented translated slugs or an
+   arbitrary English fallback. Do not ask users to identify a locale the site
+   can resolve. Preserve unrelated tabs, history and unsaved content; do not close
+   the user's browser.
 3. Wait for navigation and bounded presentation readiness, leaving login/MFA to
    the user. Apply the origin/path/build guards after navigation. A missing
    initial Playback page is a reason to navigate, not ask a readiness question
@@ -100,7 +107,7 @@ async page => {
   await fs.chmod(job, 0o700);
   const input = path.join(job, 'presentation.json');
   try {
-    const playbackPage = await preparePlaybackPage(page.context());
+    const playbackPage = await preparePlaybackPage(page.context(), { preferredPage: page });
     await acquireFromPage(playbackPage);
     await savePresentationFromPage(playbackPage, input);
     return { input, jobDirectory: job };
@@ -113,7 +120,11 @@ async page => {
 
 `preparePlaybackPage` reuses a positively identified official Playback tab or
 creates a new tab and navigates to the canonical route (30-second navigation
-bound). It never replaces an unrelated tab or launches a browser/profile.
+bound), using the selected Xbox tab's locale first, other observed Xbox locales
+second, or the locale-neutral entry with normal site redirects. It never replaces
+an unrelated tab or launches a browser/profile. Resulting pages must still pass
+the official-origin/video-route guard before evaluation; login redirects are
+left for the user and never inspected for state.
 `acquireFromPage` waits up to ten minutes for the allowlisted presentation, without
 reading login pages. Navigation failures/refusals stop rather than trigger another
 browser. These helpers do not establish profile identity or consent: the host must.
@@ -142,6 +153,21 @@ All paths share one expression: official origin/path, pinned route script
 `__reactFiber$` key, at most 64 `.return` ancestors, `memoizedProps.payload`.
 Missing/not-ready state waits only within bounds. Unsupported structure fails
 closed. Rendering separately verifies all bundle/style SHA-256 fingerprints.
+The guard accepts locale-neutral or localized `/xboxplayback` paths, never the
+`/playback` archive or arbitrary Xbox pages. A route mismatch is not a build
+change. No video chunk yet produces `PLAYBACK_ROUTE_NOT_READY` (bounded wait);
+an observed incompatible production video chunk produces
+`PLAYBACK_UNSUPPORTED_BUILD` (stop); missing presentation produces
+`PLAYBACK_NOT_READY` (bounded wait); malformed presentation produces
+`PLAYBACK_INVALID_DATA` (stop). `PlaybackVideoPage.js` is only a local reference
+filename, not the accepted production script URL.
+
+A public unauthenticated check on November 12, 2026 observed the neutral entry
+redirect to `/en-US/xboxplayback` for that request and a French page at
+`/fr-FR/xboxplayback`. The pinned public production route script still matched
+SHA-256 `d9aa886afa01d39f5c1b5e64c38d828389dd2957bfccd0199a78c02cfd686c2d`.
+This verifies the navigation entry and original script, not signed-in acquisition
+or localized rendering.
 
 Only allowlisted presentation fields are copied at **every nested level**:
 chapter scenes/text/game summaries/cues, common text, and gamer display info.
@@ -152,7 +178,8 @@ bounded arrays/nodes/strings, and validated again before use.
 
 Synthetic tests exercise missing-page -> new-tab navigation -> acquisition,
 existing official-tab reuse, preservation of unrelated tabs, navigation refusal
-and cancellation, the real headless browser expression, completed Blob
+and cancellation, selected-locale navigation, neutral-entry redirects, archive
+rejection, pending versus incompatible route chunks, the real headless browser expression, completed Blob
 download, exact privacy projection, cancellation/timeouts, existing-file
 protection, and stop-without-fallback behavior. The original Fiber path was used
 successfully in the local proof. **Fresh live-site acquisition and cross-host

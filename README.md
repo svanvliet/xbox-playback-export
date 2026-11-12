@@ -65,6 +65,32 @@ This release supplies no MCP server or tunnel and claims no tested web/mobile
 export support. Local host packaging follows official formats; an installed-host
 end-to-end agent run is not yet verified.
 
+### Update an existing installation
+
+For Copilot CLI, list installed names, then update this plugin:
+
+```sh
+copilot plugin list
+copilot plugin update xbox-playback-export
+copilot plugin list
+```
+
+If your direct installation has a qualified name, use that exact name from the
+list in the update command. For Claude Code:
+
+```sh
+claude plugin marketplace update svanvliet-playback
+claude plugin update xbox-playback-export@svanvliet-playback
+```
+
+Restart the host/open a **new session** after updating. Confirm the installed
+plugin version and the actual loaded skill directory's `package.json` both show
+`0.1.0-alpha.4` or newer; updating the repo alone does not refresh a cached skill.
+If updating is unavailable, use your host's supported uninstall/reinstall flow
+with the same source above. Do not edit cached skill files by hand. A stale
+`/playback`-only guard or local `PlaybackVideoPage.js` check is a reason to check
+the loaded installation first, not evidence that the production site changed.
+
 ### Run directly (macOS or Windows)
 
 Install Node 22.16+ (24 recommended), Edge or Chrome, and FFmpeg/ffprobe on PATH.
@@ -94,8 +120,11 @@ Ask your agent to export your Xbox Playback. It prefers installed **Microsoft
 Edge (`msedge`)** and always uses the selected browser's **normal default profile
 for acquisition**, keeping your existing sign-in. After consent covering opening,
 navigation and acquisition, it opens the normal browser if needed and navigates
-to **https://www.xbox.com/en-US/xboxplayback** in a new tab, or reuses a positively
-identified Playback tab. You do not need to open the page or confirm it is already
+to the **localized `/xboxplayback` video experience** in a new tab, or reuses a
+positively identified video tab. It uses the selected Xbox tab's observed locale,
+or **https://www.xbox.com/xboxplayback** and the site's redirects when none is known.
+The `/playback` archive is not the video experience. You do not need to select a
+locale, open the page or confirm it is already
 open. It uses supported computer-use or browser tools confirmed to access that
 default-profile window; you handle sign-in/MFA if needed. Chrome is used only if
 Edge is absent or you explicitly select Chrome.
@@ -109,6 +138,8 @@ exporting cookies, or restarting your browser with debugging flags.
 Once the agent has acquired the bounded private presentation data, rendering
 still uses a fresh muted headless browser without account state. The default
 profile is used for acquisition only, not for rendering or asset downloads.
+Locale-aware navigation does not imply verified rendering in every language;
+English macOS/Edge import rendering is verified, other locales remain experimental.
 
 See [agent-assisted acquisition and tool handoff](skills/xbox-playback-export/references/acquisition.md).
 An installed skill does not grant browser tools or local execution. If tools are

@@ -200,7 +200,7 @@ test('acquisition allowlists every nested field and never invokes extra auth get
   Object.defineProperty(payload.userInformation, 'authState', { get() { throw Error('Must not read auth state'); } });
   const main = { '__reactFiber$synthetic': { return: { memoizedProps: { payload } } } };
   const context = {
-    location: { href: 'https://www.xbox.com/en-US/playback/video' },
+    location: { href: 'https://www.xbox.com/fr-FR/xboxplayback/video' },
     document: {
       scripts: [{ src: 'https://assets-xbxweb.xbox.com/xbox-web/static/js/PlaybackVideoPage.5cadca40.chunk.js' }],
       querySelector: () => main,
@@ -212,6 +212,8 @@ test('acquisition allowlists every nested field and never invokes extra auth get
   const exported = JSON.parse(text);
   context.location.href = 'https://www.xbox.com/en-US/xboxplayback';
   assert.deepEqual(JSON.parse(extract()), exported);
+  context.location.href = 'https://www.xbox.com/xboxplayback';
+  assert.deepEqual(JSON.parse(extract()), exported);
   assert.deepEqual(Object.keys(exported).sort(), ['chapterCount', 'chapters', 'commonText', 'userInformation', 'chapterCues'].sort());
   assert.equal(exported.userInformation.gamerTag, 'SYNTHETIC');
   assert.ok(!text.includes('PRIVATE_SENTINEL'));
@@ -221,7 +223,13 @@ test('acquisition allowlists every nested field and never invokes extra auth get
   context.location.href = 'https://www.xbox.com/en-US/account';
   assert.throws(extract, /WRONG_PAGE/);
   context.location.href = 'https://www.xbox.com/en-US/playback';
+  assert.throws(extract, /WRONG_PAGE/);
+  context.location.href = 'https://www.xbox.com/fr-FR/xboxplayback';
   context.document.scripts = [];
+  assert.throws(extract, /ROUTE_NOT_READY/);
+  context.document.scripts = [{ src: 'https://assets-xbxweb.xbox.com/xbox-web/static/js/PlaybackVideoPage.incompatible.chunk.js' }];
+  assert.throws(extract, /UNSUPPORTED_BUILD/);
+  context.document.scripts = [{ src: 'https://assets-xbxweb.xbox.com/xbox-web/static/js/PlaybackVideoPage.js' }];
   assert.throws(extract, /UNSUPPORTED_BUILD/);
   context.document.scripts = [{ src: 'https://assets-xbxweb.xbox.com/xbox-web/static/js/PlaybackVideoPage.5cadca40.chunk.js' }];
   main.__reactFiber$synthetic = { return: null };
@@ -244,9 +252,13 @@ test('Edge remains the default renderer and legacy URL acquisition cannot open a
   for (const url of ['http://www.xbox.com/en-US/playback', 'https://xbox.com/en-US/playback',
     'https://www.xbox.com:8443/playback', 'https://name:secret@www.xbox.com/playback',
     'https://www.xbox.com/en-US/playback-fake', 'https://evil.invalid/playback',
-    'https://www.xbox.com/en-US/xboxplayback-fake', 'https://www.xbox.com.evil.invalid/xboxplayback']) {
+    'https://www.xbox.com/en-US/xboxplayback-fake', 'https://www.xbox.com.evil.invalid/xboxplayback',
+    'https://www.xbox.com/en-US/playback', 'https://www.xbox.com/playback',
+    'https://name:secret@www.xbox.com/xboxplayback', 'http://www.xbox.com/xboxplayback']) {
     assert.throws(() => validatePageUrl(url));
   }
+  for (const url of ['https://www.xbox.com/xboxplayback', 'https://www.xbox.com/fr-FR/xboxplayback',
+    'https://www.xbox.com/zh-Hant-TW/xboxplayback/video']) assert.equal(validatePageUrl(url), url);
   assert.equal(parseArgs(['export', '--input', 'a.json', '--output', 'a.mp4']).browser, 'msedge');
   await assert.rejects(main(['export', '--url', 'https://www.xbox.com/en-US/playback', '--consent', 'headed', '--output', 'a.mp4']),
     /existing Edge default-profile tab/);
@@ -268,6 +280,9 @@ test('Playback navigation cancellation and refusal never create a fallback or re
   controller.abort();
   await assert.rejects(preparePlaybackPage(context, { signal: controller.signal }), { name: 'AbortError' });
   assert.equal(opened, 0);
+  await assert.rejects(preparePlaybackPage({ ...context, pages: () => [{ url: () => { throw Error('Native permission denied'); } }] }),
+    /Native permission denied/);
+  assert.equal(opened, 0);
   await assert.rejects(preparePlaybackPage(context), /^Error: Playback navigation failed;/);
   assert.equal(opened, 1);
 });
@@ -276,13 +291,17 @@ test('acquisition stops on refusal/unsupported pages, bounds waiting, and never 
   let evaluations = 0;
   for (const message of ['page.evaluate: Error: PLAYBACK_UNSUPPORTED_BUILD', 'Native permission denied PRIVATE_SENTINEL',
     'page.evaluate: Error: PLAYBACK_INVALID_DATA', 'Target page closed']) {
-    const page = { url: () => 'https://www.xbox.com/playback', evaluate: async () => { evaluations++; throw Error(message); } };
+    const page = { url: () => 'https://www.xbox.com/xboxplayback', evaluate: async () => { evaluations++; throw Error(message); } };
     const before = evaluations;
     await assert.rejects(acquireFromPage(page), error => !error.message.includes('PRIVATE_SENTINEL'));
     assert.equal(evaluations, before + 1);
   }
-  const page = { url: () => 'https://www.xbox.com/playback', evaluate: async () => { throw Error('page.evaluate: Error: PLAYBACK_NOT_READY'); } };
+  const page = { url: () => 'https://www.xbox.com/xboxplayback', evaluate: async () => { throw Error('page.evaluate: Error: PLAYBACK_NOT_READY'); } };
   await assert.rejects(acquireFromPage(page, { timeoutMs: 30 }), /timed out/);
+  await assert.rejects(acquireFromPage({ ...page, evaluate: async () => { throw Error('page.evaluate: Error: PLAYBACK_ROUTE_NOT_READY'); } },
+    { timeoutMs: 30 }), /timed out/);
+  await assert.rejects(acquireFromPage({ url: () => 'https://www.xbox.com/fr-FR/playback',
+    evaluate: () => { throw Error('Must not inspect archive state'); } }), /archive/);
   const controller = new AbortController();
   setTimeout(() => controller.abort(), 20);
   await assert.rejects(acquireFromPage(page, { signal: controller.signal }), /cancelled/);
@@ -292,7 +311,7 @@ test('download timeout and mid-flight cancellation remove owned files/listeners 
   const dir = await temporary(t);
   for (const cancel of [false, true]) {
     const page = new EventEmitter();
-    page.url = () => 'https://www.xbox.com/en-US/playback';
+    page.url = () => 'https://www.xbox.com/fr-FR/xboxplayback';
     page.evaluate = () => new Promise(() => {});
     page.close = () => { throw Error('Must not close a host-owned tab'); };
     const controller = new AbortController();
@@ -322,6 +341,9 @@ test('real browser opens missing Playback tab, reuses it, acquires synthetic dat
   assert.equal(context.pages().length, 2);
   assert.equal(await preparePlaybackPage(context), page);
   assert.equal(context.pages().length, 2);
+  await page.goto('https://www.xbox.com/fr-FR/xboxplayback');
+  assert.equal(await preparePlaybackPage(context, { preferredPage: unrelated }), page);
+  assert.equal(page.url(), 'https://www.xbox.com/fr-FR/xboxplayback');
   const payload = fixture();
   payload.accessToken = 'PRIVATE_SENTINEL';
   payload.userInformation.refreshToken = 'PRIVATE_SENTINEL';
@@ -361,4 +383,33 @@ test('real browser opens missing Playback tab, reuses it, acquires synthetic dat
   await assert.rejects(fs.stat(missing), { code: 'ENOENT' });
   assert.equal(page.listenerCount('download'), 0);
   assert.ok(!page.isClosed());
+});
+
+test('real browser follows locale-neutral redirects and uses the selected Xbox locale without touching the archive', async t => {
+  const { chromium } = createRequire(new URL('../skills/xbox-playback-export/package.json', import.meta.url))('playwright');
+  const browser = await chromium.launch({ channel: process.env.PLAYBACK_TEST_BROWSER || 'msedge',
+    headless: true, args: ['--mute-audio'] });
+  t.after(() => browser.close());
+  const context = await browser.newContext();
+  const requests = [];
+  await context.route('**/*', route => {
+    const url = route.request().url();
+    requests.push(url);
+    return route.fulfill(url === playbackUrl ?
+      { status: 302, headers: { location: 'https://www.xbox.com/de-DE/xboxplayback' } } :
+      { contentType: 'text/html', body: '<html><body>Synthetic page</body></html>' });
+  });
+  const redirected = await preparePlaybackPage(context);
+  assert.equal(requests[0], playbackUrl);
+  assert.equal(redirected.url(), 'https://www.xbox.com/de-DE/xboxplayback');
+  await redirected.goto('https://www.xbox.com/en-US/games');
+  const selected = await context.newPage();
+  await selected.goto('https://www.xbox.com/fr-FR/playback');
+  const localized = await preparePlaybackPage(context, { preferredPage: selected });
+  assert.notEqual(localized, selected);
+  assert.equal(localized.url(), 'https://www.xbox.com/fr-FR/xboxplayback');
+  assert.equal(selected.url(), 'https://www.xbox.com/fr-FR/playback');
+  assert.equal(redirected.url(), 'https://www.xbox.com/en-US/games');
+  assert.equal(await preparePlaybackPage(context, { preferredPage: selected }), localized);
+  assert.equal(context.pages().length, 3);
 });

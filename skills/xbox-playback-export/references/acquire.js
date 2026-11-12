@@ -4,13 +4,17 @@
   const fail = code => { throw Error(code); };
   const locationUrl = new URL(location.href);
   if (locationUrl.origin !== 'https://www.xbox.com' || locationUrl.username || locationUrl.password ||
-      !/^\/(?:[a-z]{2}-[a-z]{2}\/)?(?:xboxplayback|playback)(?:\/|$)/i.test(locationUrl.pathname)) {
+      !/^\/(?:[a-z]{2,3}(?:-[a-z]{4})?-(?:[a-z]{2}|\d{3})\/)?xboxplayback(?:\/|$)/i.test(locationUrl.pathname)) {
     fail('PLAYBACK_WRONG_PAGE');
+  }
+  const route = 'https://assets-xbxweb.xbox.com/xbox-web/static/js/PlaybackVideoPage.5cadca40.chunk.js';
+  const routeScripts = [...document.scripts].map(script => script.src).filter(src =>
+    src.startsWith('https://assets-xbxweb.xbox.com/xbox-web/static/js/PlaybackVideoPage') && src.endsWith('.js'));
+  if (!routeScripts.includes(route)) {
+    fail(routeScripts.length ? 'PLAYBACK_UNSUPPORTED_BUILD' : 'PLAYBACK_ROUTE_NOT_READY');
   }
   const main = document.querySelector('main[data-experience-completed]');
   if (!main) fail('PLAYBACK_NOT_READY');
-  const route = 'https://assets-xbxweb.xbox.com/xbox-web/static/js/PlaybackVideoPage.5cadca40.chunk.js';
-  if (![...document.scripts].some(script => script.src === route)) fail('PLAYBACK_UNSUPPORTED_BUILD');
   const key = Object.keys(main).find(name => name.startsWith('__reactFiber$'));
   let fiber = key && Object.getOwnPropertyDescriptor(main, key)?.value;
   let payload;

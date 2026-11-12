@@ -30,8 +30,13 @@ Do not silently adapt to a new site build.
    Do not ask whether Playback is already open or tell the user to open it.
    The coding/install request is not browser permission. After consent, discover
    or open Edge through the computer-use provider. Reuse a positively identified
-   official Playback tab; otherwise open a new tab and navigate directly to
-   `https://www.xbox.com/en-US/xboxplayback`. Do not replace unrelated tabs or
+   official `/xboxplayback` video tab, including localized variants. Otherwise
+   open a new tab: preserve the selected official Xbox tab's observed locale in
+   `https://www.xbox.com/<locale>/xboxplayback`; if none is known, use
+   `https://www.xbox.com/xboxplayback` and follow the site's redirects.
+   Do not ask for a locale the tools/site can resolve, guess translated slugs,
+   or force English. `/playback` is an archive, not the video experience.
+   Do not replace unrelated tabs or
    unsaved content. Wait for navigation and presentation readiness; only the user
    handles sign-in/MFA if needed. Do not ask readiness questions that the tools
    can resolve. Ask only for genuine permission or unresolved profile/account
@@ -72,6 +77,13 @@ Do not silently adapt to a new site build.
    interact with login/MFA/password fields or close the user's tabs. The removed
    `--url`/`--consent headed` mode fails explicitly rather than opening a new profile.
    Do not put evaluated presentation data in chat/tool logs.
+   A missing route chunk is a bounded readiness wait, not proof the site changed.
+   The supported production script is `PlaybackVideoPage.5cadca40.chunk.js`,
+   not a local reference filename `PlaybackVideoPage.js`. A different production
+   video chunk is an unsupported build; invalid payload is a separate error.
+   Do not bypass these guards. Navigation localization does not establish
+   renderer language/font support; only English macOS/Edge import rendering is
+   verified. Keep other locales intact and report actual compatibility failures.
 5. Validate and export the agent-acquired input (or an explicit recovery import):
 
    ```sh
