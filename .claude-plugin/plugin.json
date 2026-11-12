@@ -1,0 +1,9 @@
+{
+  "name": "xbox-playback-export",
+  "version": "0.1.0-alpha.1",
+  "description": "Experimental local Xbox Playback video export from an explicitly imported presentation payload.",
+  "author": { "name": "svanvliet" },
+  "homepage": "https://github.com/svanvliet/xbox-playback-export",
+  "repository": "https://github.com/svanvliet/xbox-playback-export",
+  "license": "MIT"
+}

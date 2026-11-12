@@ -1,0 +1,8 @@
+{
+  "name": "svanvliet-playback",
+  "owner": { "name": "svanvliet" },
+  "metadata": { "description": "Experimental local Xbox Playback export skill." },
+  "plugins": [
+    { "name": "xbox-playback-export", "source": "./" }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "svanvliet-playback",
+  "interface": { "displayName": "Xbox Playback Export (experimental)" },
+  "plugins": [
+    {
+      "name": "xbox-playback-export",
+      "source": { "source": "local", "path": "./" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

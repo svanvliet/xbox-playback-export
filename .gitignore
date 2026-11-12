@@ -11,9 +11,15 @@ output/
 recording/
 browser-profile/
 scenes.json
+*playback-scenes*.json
+presentation.json
 asset-index.json
 *.mp4
 *.webm
+*.mkv
 *.mp3
+*.wav
 *.woff
 *.woff2
+*.har
+*.heapsnapshot
