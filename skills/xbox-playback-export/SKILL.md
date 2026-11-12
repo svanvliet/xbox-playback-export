@@ -1,6 +1,6 @@
 ---
 name: xbox-playback-export
-description: Export a user's Xbox Playback presentation to a local 1080p H.264/AAC MP4 from explicitly imported presentation JSON. Use for Xbox Playback video export, not Xbox game captures, sign-in automation, or account-data scraping. Requires a local execution host with Node, Edge or Chrome, and FFmpeg.
+description: Export a user's Xbox Playback presentation to a local 1080p H.264/AAC MP4 with consent-based agent-assisted browser acquisition; explicit JSON import remains available for recovery. Use for Xbox Playback video export, not game captures, sign-in automation, or account-data scraping. Requires local Node, Edge or Chrome, and FFmpeg.
 ---
 
 # Xbox Playback Export
@@ -14,13 +14,23 @@ Do not silently adapt to a new site build.
    capabilities. ChatGPT web/mobile without a separately authorized local bridge
    cannot perform this export. Explain that limit rather than uploading the
    user's JSON to a remote execution environment or inventing a connector.
-2. Obtain the user's presentation JSON path and desired new `.mp4` path. Reuse an
-   explicitly provided payload. Otherwise explain the manual, user-controlled
-   acquisition in [references/acquisition.md](references/acquisition.md).
-   Ask and wait for permission before ANY visible browser/computer-use automation
-   or interaction with the user's existing browser. This plugin provides no
-   automatic sign-in or browser-extraction tool. Never export cookies, tokens,
-   network archives, auth state, browser profiles, or full application stores.
+2. Obtain the desired new `.mp4` path and let the agent acquire the presentation;
+   do not ask the user to create, find, rename, or paste JSON or use DevTools.
+   Reuse an explicitly provided input only for advanced/recovery use.
+   Discover the host's available computer-use/browser tools and read their actual
+   capabilities. Ask and wait for permission before controlling an explicitly
+   selected existing Playback tab, attaching to a browser, or opening a separate
+   visible browser. The coding/install request is not browser permission.
+   Prefer computer-use on that selected tab if it supports the bounded extraction
+   and private download handoff in [references/acquisition.md](references/acquisition.md).
+   Once controlled with computer-use, observe/control it only through that server.
+   Do not silently attach Playwright/CDP to it.
+   If capability is absent, use supported browser tools or request permission for
+   the separate Playwright-managed browser below. Never fall back after user
+   denial, missing OS permission, native refusal, policy restrictions, an
+   unsupported build, or malformed data. Explain the blocker instead.
+   The user handles Microsoft sign-in/MFA directly. Never read credentials,
+   cookies, tokens, auth state, full stores, profiles, or network archives.
 3. Locate this skill's actual installed directory, denoted `SKILL_DIR` below.
    The scripts and dependency manifest are inside this directory, not the user's
    working repository. Respect the host's approval prompts. If dependencies are
@@ -33,7 +43,26 @@ Do not silently adapt to a new site build.
    Do not automatically download Playwright browsers. The default uses installed
    Edge; `--browser chrome` uses installed Chrome. See
    [references/usage.md](references/usage.md) for prerequisites.
-4. Validate the explicitly chosen JSON file:
+4. If the approved existing-tab path is unavailable, acquire and export in one
+   command using a separate fresh browser, after consent for that distinct session.
+   Use the user's official Xbox Playback URL (not a guessed personalized link):
+
+   ```sh
+   node "SKILL_DIR/scripts/cli.mjs" export --url "https://www.xbox.com/en-US/playback" --consent headed --output "/private/playback.mp4"
+   ```
+
+   `--consent headed` records permission already obtained, never grants it.
+   The acquisition browser is visible but muted; tell the user to sign in and
+   load their presentation there. The helper waits up to ten minutes, reads only
+   the bounded allowlisted presentation prop, closes its own browser, then
+   renders silently. No intermediate JSON is needed or saved.
+   Do not interact with login/MFA/password fields. Do not copy daily profiles,
+   enable debugging on a user's browser, or expose a debugging listener.
+5. Alternatively, when acquiring through an existing approved browser tool, use the shared
+   `references/acquire.js` function and private completed-download handoff in the
+   acquisition reference. The agent chooses a new file in its private job folder,
+   validates it, exports, then removes only its owned temporary input/folder.
+   Do not put evaluated presentation data in chat/tool logs. For explicit imports:
 
    ```sh
    node "SKILL_DIR/scripts/cli.mjs" validate --input "/private/presentation.json"
@@ -41,7 +70,7 @@ Do not silently adapt to a new site build.
 
    Validation checks the supported shape only. Export also verifies bundle
    fingerprints, fonts, media, control-free rendering, timing, and output streams.
-5. Export locally, quoting paths for the current shell:
+   Export the acquired/imported file locally, quoting paths for the current shell:
 
    ```sh
    node "SKILL_DIR/scripts/cli.mjs" export --input "/private/presentation.json" --output "/private/playback.mp4"

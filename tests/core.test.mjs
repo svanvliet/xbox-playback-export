@@ -4,6 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import vm from 'node:vm';
+import { createRequire } from 'node:module';
+import { EventEmitter } from 'node:events';
 import { validatePayload, selectScenes, readPayload } from '../skills/xbox-playback-export/scripts/payload.mjs';
 import { AssetCache, validateUrl } from '../skills/xbox-playback-export/scripts/assets.mjs';
 import { parseMarkers, audioTiming } from '../skills/xbox-playback-export/scripts/encode.mjs';
@@ -11,6 +13,7 @@ import { markerColors } from '../skills/xbox-playback-export/scripts/record.mjs'
 import { parseArgs, publishFile } from '../skills/xbox-playback-export/scripts/cli.mjs';
 import { verifyDigest, replaceOnce, patchRoute } from '../skills/xbox-playback-export/scripts/adapter.mjs';
 import { run } from '../skills/xbox-playback-export/scripts/process.mjs';
+import { extractionSource, acquireFromPage, acquirePresentation, savePresentationFromPage, validatePageUrl } from '../skills/xbox-playback-export/scripts/acquire.mjs';
 
 const uri = 'https://assets-xbxweb.xbox.com/synthetic.mp4';
 export function fixture() {
@@ -188,27 +191,149 @@ test('cancelled child exits and does not leave a background command running', as
   await assert.rejects(result, /cancelled/);
 });
 
-test('manual acquisition reads only the bounded presentation prop and selected roots', async () => {
-  const source = await fs.readFile(new URL('../skills/xbox-playback-export/references/acquire.js', import.meta.url), 'utf8');
-  const payload = { ...fixture(), playbackMusicUri: uri, privateExtra: 'DO NOT SERIALIZE' };
-  let blob;
-  let clicked = false;
+test('acquisition allowlists every nested field and never invokes extra auth getters or serializers', () => {
+  const payload = { ...fixture(), playbackMusicUri: uri, accessToken: 'PRIVATE_SENTINEL' };
+  payload.userInformation.cookies = 'PRIVATE_SENTINEL';
+  payload.chapters[1].data.refreshToken = 'PRIVATE_SENTINEL';
+  payload.chapters[0].data.videoSequence[0].authorization = 'PRIVATE_SENTINEL';
+  payload.commonText.toJSON = () => { throw Error('Must not execute serializers'); };
+  Object.defineProperty(payload.userInformation, 'authState', { get() { throw Error('Must not read auth state'); } });
   const main = { '__reactFiber$synthetic': { return: { memoizedProps: { payload } } } };
   const context = {
+    location: { href: 'https://www.xbox.com/en-US/playback/video' },
     document: {
       scripts: [{ src: 'https://assets-xbxweb.xbox.com/xbox-web/static/js/PlaybackVideoPage.5cadca40.chunk.js' }],
       querySelector: () => main,
-      createElement: () => ({ click: () => { clicked = true; }, remove() {} }),
-      body: { appendChild() {} },
     },
-    URL: { createObjectURL: value => { blob = value; return 'blob:synthetic'; }, revokeObjectURL() {} },
-    Blob, setTimeout: fn => fn(),
+    URL, TextEncoder,
   };
-  vm.runInNewContext(source, context);
-  assert.ok(clicked);
-  const exported = JSON.parse(await blob.text());
+  const extract = () => vm.runInNewContext(`(${extractionSource})()`, context);
+  const text = extract();
+  const exported = JSON.parse(text);
+  assert.deepEqual(Object.keys(exported).sort(), ['chapterCount', 'chapters', 'commonText', 'userInformation', 'chapterCues'].sort());
   assert.equal(exported.userInformation.gamerTag, 'SYNTHETIC');
-  assert.equal(exported.privateExtra, undefined);
+  assert.ok(!text.includes('PRIVATE_SENTINEL'));
+  validatePayload(exported);
+  context.location.href = 'https://www.xbox.com.evil.invalid/en-US/playback';
+  assert.throws(extract, /WRONG_PAGE/);
+  context.location.href = 'https://www.xbox.com/en-US/account';
+  assert.throws(extract, /WRONG_PAGE/);
+  context.location.href = 'https://www.xbox.com/en-US/playback';
+  context.document.scripts = [];
+  assert.throws(extract, /UNSUPPORTED_BUILD/);
+  context.document.scripts = [{ src: 'https://assets-xbxweb.xbox.com/xbox-web/static/js/PlaybackVideoPage.5cadca40.chunk.js' }];
   main.__reactFiber$synthetic = { return: null };
-  assert.throws(() => vm.runInNewContext(source, context), /presentation payload/);
+  assert.throws(extract, /NOT_READY/);
+  const cycle = { return: null };
+  cycle.return = cycle;
+  main.__reactFiber$synthetic = cycle;
+  assert.throws(extract, /NOT_READY/);
+  main.__reactFiber$synthetic = { memoizedProps: { payload } };
+  payload.userInformation.gamerTag = { accessToken: 'PRIVATE_SENTINEL' };
+  assert.throws(extract, /INVALID_DATA/);
+  Object.defineProperty(payload.userInformation, 'gamerTag', { get() { throw Error('PRIVATE_SENTINEL'); } });
+  assert.throws(extract, /INVALID_DATA/);
+  Object.defineProperty(payload.userInformation, 'gamerTag', { value: 'SYNTHETIC' });
+  payload.commonText.additionalTextStrings = Array.from({ length: 18 }, () => ({ kind: 'text', text: '\u00e9'.repeat(60000) }));
+  assert.throws(extract, /INVALID_DATA/);
+});
+
+test('URL acquisition requires explicit consent and rejects unsafe page locations before launching', async () => {
+  for (const url of ['http://www.xbox.com/en-US/playback', 'https://xbox.com/en-US/playback',
+    'https://www.xbox.com:8443/playback', 'https://name:secret@www.xbox.com/playback',
+    'https://www.xbox.com/en-US/playback-fake', 'https://evil.invalid/playback']) {
+    assert.throws(() => validatePageUrl(url));
+  }
+  await assert.rejects(acquirePresentation('https://www.xbox.com/en-US/playback'), /permission/);
+  assert.equal(parseArgs(['export', '--url', 'https://www.xbox.com/en-US/playback', '--consent', 'headed', '--output', 'a.mp4']).consent, 'headed');
+  for (const options of [
+    ['--url', 'https://www.xbox.com/en-US/playback'],
+    ['--url', 'https://www.xbox.com/en-US/playback', '--consent', 'yes'],
+    ['--input', 'a.json', '--consent', 'headed'],
+    ['--input', 'a.json', '--url', 'https://www.xbox.com/playback', '--consent', 'headed'],
+  ]) assert.throws(() => parseArgs(['export', '--output', 'a.mp4', ...options]));
+});
+
+test('acquisition stops on refusal/unsupported pages, bounds waiting, and never opens a fallback browser', async () => {
+  let evaluations = 0;
+  for (const message of ['page.evaluate: Error: PLAYBACK_UNSUPPORTED_BUILD', 'Native permission denied PRIVATE_SENTINEL',
+    'page.evaluate: Error: PLAYBACK_INVALID_DATA', 'Target page closed']) {
+    const page = { url: () => 'https://www.xbox.com/playback', evaluate: async () => { evaluations++; throw Error(message); } };
+    const before = evaluations;
+    await assert.rejects(acquireFromPage(page), error => !error.message.includes('PRIVATE_SENTINEL'));
+    assert.equal(evaluations, before + 1);
+  }
+  const page = { url: () => 'https://www.xbox.com/playback', evaluate: async () => { throw Error('page.evaluate: Error: PLAYBACK_NOT_READY'); } };
+  await assert.rejects(acquireFromPage(page, { timeoutMs: 30 }), /timed out/);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 20);
+  await assert.rejects(acquireFromPage(page, { signal: controller.signal }), /cancelled/);
+});
+
+test('download timeout and mid-flight cancellation remove owned files/listeners without closing user tabs', async t => {
+  const dir = await temporary(t);
+  for (const cancel of [false, true]) {
+    const page = new EventEmitter();
+    page.url = () => 'https://www.xbox.com/en-US/playback';
+    page.evaluate = () => new Promise(() => {});
+    page.close = () => { throw Error('Must not close a host-owned tab'); };
+    const controller = new AbortController();
+    const destination = path.join(dir, cancel ? 'cancelled.json' : 'timeout.json');
+    const result = savePresentationFromPage(page, destination, { timeoutMs: cancel ? 1000 : 30, signal: controller.signal });
+    if (cancel) setTimeout(() => controller.abort(), 20);
+    await assert.rejects(result, /failed/);
+    await assert.rejects(fs.stat(destination), { code: 'ENOENT' });
+    assert.equal(page.listenerCount('download'), 0);
+  }
+});
+
+test('real headless browser acquires synthetic presentation and completes a private Blob download', async t => {
+  const { chromium } = createRequire(new URL('../skills/xbox-playback-export/package.json', import.meta.url))('playwright');
+  const browser = await chromium.launch({ channel: process.env.PLAYBACK_TEST_BROWSER || 'msedge',
+    headless: true, args: ['--mute-audio'] });
+  t.after(() => browser.close());
+  const context = await browser.newContext({ acceptDownloads: true });
+  await context.route('**/*', route => route.fulfill({ contentType: 'text/html',
+    body: '<html><body><main data-experience-completed></main></body></html>' }));
+  const page = await context.newPage();
+  await page.goto('https://www.xbox.com/en-US/playback');
+  const payload = fixture();
+  payload.accessToken = 'PRIVATE_SENTINEL';
+  payload.userInformation.refreshToken = 'PRIVATE_SENTINEL';
+  payload.chapters[1].data.topGamesData = [{ gameName: 'SYNTHETIC', auth: 'PRIVATE_SENTINEL' }];
+  await page.evaluate(p => {
+    const script = document.createElement('script');
+    script.type = 'application/json';
+    script.src = 'https://assets-xbxweb.xbox.com/xbox-web/static/js/PlaybackVideoPage.5cadca40.chunk.js';
+    document.head.appendChild(script);
+    document.querySelector('main').__reactFiber$synthetic = { return: { memoizedProps: { payload: p } } };
+  }, payload);
+  const acquired = await acquireFromPage(page, { timeoutMs: 5000 });
+  assert.equal(acquired.userInformation.gamerTag, 'SYNTHETIC');
+  assert.ok(!JSON.stringify(acquired).includes('PRIVATE_SENTINEL'));
+  await page.evaluate(() => {
+    const main = document.querySelector('main');
+    const fiber = main.__reactFiber$synthetic;
+    delete main.__reactFiber$synthetic;
+    setTimeout(() => { main.__reactFiber$synthetic = fiber; }, 100);
+  });
+  assert.deepEqual(await acquireFromPage(page, { timeoutMs: 5000 }), acquired);
+  const dir = await temporary(t);
+  await fs.chmod(dir, 0o700);
+  const destination = path.join(dir, 'agent presentation.json');
+  await savePresentationFromPage(page, destination, { timeoutMs: 5000 });
+  assert.deepEqual(await readPayload(destination), acquired);
+  if (process.platform !== 'win32') assert.equal((await fs.stat(destination)).mode & 0o777, 0o600);
+  await assert.rejects(savePresentationFromPage(page, destination), /already exists/);
+  assert.deepEqual(await readPayload(destination), acquired);
+  const cancelled = new AbortController();
+  cancelled.abort();
+  await assert.rejects(savePresentationFromPage(page, path.join(dir, 'cancelled.json'), { signal: cancelled.signal }));
+  await assert.rejects(fs.stat(path.join(dir, 'cancelled.json')), { code: 'ENOENT' });
+  await page.evaluate(() => { delete document.querySelector('main').__reactFiber$synthetic; });
+  const missing = path.join(dir, 'not ready.json');
+  await assert.rejects(savePresentationFromPage(page, missing, { timeoutMs: 200 }), /failed/);
+  await assert.rejects(fs.stat(missing), { code: 'ENOENT' });
+  assert.equal(page.listenerCount('download'), 0);
+  assert.ok(!page.isClosed());
 });

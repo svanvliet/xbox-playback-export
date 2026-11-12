@@ -9,14 +9,18 @@ import { run } from './process.mjs';
 import { record } from './record.mjs';
 import { encode } from './encode.mjs';
 import { adapterId } from './adapter.mjs';
+import { acquirePresentation, validatePageUrl } from './acquire.mjs';
 
 const help = `Xbox Playback Export (experimental)
   node cli.mjs validate --input /private/presentation.json
   node cli.mjs export --input /private/presentation.json --output /private/playback.mp4
                      [--quality high|share] [--browser msedge|chrome]
+  node cli.mjs export --url https://www.xbox.com/en-US/playback --consent headed
+                     --output /private/playback.mp4 [--browser msedge|chrome]
 
 Requires Node >=22.16, installed Edge/Chrome, ffmpeg and ffprobe on PATH.
-Imports presentation JSON only; never signs in or reads an existing browser.
+URL mode opens a separate visible browser only after explicit consent.
+The user signs in; this tool reads only the loaded presentation, never credentials.
 Local temporary data is deleted on success, failure, or Ctrl+C. Outputs are never overwritten.
 `;
 
@@ -25,7 +29,7 @@ export function parseArgs(args) {
   const [command, ...flags] = args;
   if (!['export', 'validate'].includes(command)) throw new Error('Unknown command. Use --help.');
   const options = { command, quality: 'high', browser: 'msedge' };
-  const allowed = command === 'export' ? ['input', 'output', 'quality', 'browser'] : ['input'];
+  const allowed = command === 'export' ? ['input', 'url', 'consent', 'output', 'quality', 'browser'] : ['input'];
   const seen = new Set();
   for (let i = 0; i < flags.length; i += 2) {
     const key = flags[i].replace(/^--/, '');
@@ -36,7 +40,12 @@ export function parseArgs(args) {
     seen.add(key);
     options[key] = value;
   }
-  if (!options.input || command === 'export' && !options.output) throw new Error('Required input/output option is missing. Use --help.');
+  if ((!options.input && !options.url) || (options.input && options.url) ||
+      command === 'export' && !options.output) throw new Error('Choose exactly one input or URL and a new output. Use --help.');
+  if (options.url) {
+    validatePageUrl(options.url);
+    if (options.consent !== 'headed') throw new Error('Permission for a separate visible browser is required (--consent headed).');
+  } else if (options.consent) throw new Error('Browser consent applies only to URL acquisition.');
   if (!['high', 'share'].includes(options.quality) || !['msedge', 'chrome'].includes(options.browser)) {
     throw new Error('Unsupported quality or browser. Use --help.');
   }
@@ -63,7 +72,7 @@ export async function publishFile(source, destination, signal) {
 export async function main(args, signal) {
   const options = parseArgs(args);
   if (options.command === 'help') { console.log(help); return; }
-  const payload = await readPayload(path.resolve(options.input));
+  let payload = options.input ? await readPayload(path.resolve(options.input)) : undefined;
   if (options.command === 'validate') {
     console.log(`Presentation shape accepted: ${selectScenes(payload).length} scenes; adapter ${adapterId}. Rendering compatibility is checked during export.`);
     return;
@@ -77,6 +86,9 @@ export async function main(args, signal) {
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xbox-playback-export-'));
   await fs.chmod(workDir, 0o700);
   try {
+    if (options.url) {
+      payload = await acquirePresentation(options.url, { consent: options.consent, channel: options.browser, signal });
+    }
     const assetDir = path.join(workDir, 'assets');
     await fs.mkdir(assetDir, { mode: 0o700 });
     const cache = new AssetCache(assetDir, { signal });

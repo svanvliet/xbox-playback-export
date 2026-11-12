@@ -28,6 +28,16 @@ Check `node --version`, `ffmpeg -version`, and `ffprobe -version`. From a clone:
 ```sh
 npm ci --prefix skills/xbox-playback-export --ignore-scripts --no-audit --no-fund
 node skills/xbox-playback-export/scripts/cli.mjs --help
+node skills/xbox-playback-export/scripts/cli.mjs export --url "https://www.xbox.com/en-US/playback" --consent headed --output "/private/playback.mp4"
+```
+
+URL acquisition requires prior permission to open a separate visible browser.
+The user signs in themselves and loads their presentation; no JSON file is
+needed. Use the user's selected official Playback URL, not a guessed account
+link. See [acquisition](acquisition.md) for preferred existing-tab tool support,
+consent boundaries, and evidence limits. For advanced/recovery imports only:
+
+```sh
 node skills/xbox-playback-export/scripts/cli.mjs validate --input "/private/presentation.json"
 node skills/xbox-playback-export/scripts/cli.mjs export --input "/private/presentation.json" --output "/private/playback.mp4"
 ```
@@ -39,8 +49,11 @@ Chrome or `--quality share` for a smaller encode.
 
 The export records in real time, then encodes. Leave the computer awake and allow
 a few minutes, several GB of temporary space, and network access. The browser
-stays headless and muted. Browser profiles, cookies and login state are never
-imported. No local HTTP server or exposed network listener is started.
+stays headless and muted during rendering; separate URL acquisition is visible
+and muted until the user finishes loading Playback. Browser profiles, cookies and
+login state are never exported/imported. Acquisition's fresh nonpersistent browser
+necessarily handles the user's sign-in internally, but the helper never reads or
+persists session state. No local server or exposed debugging listener is started.
 
 ## Limits and failure behavior
 
@@ -72,7 +85,9 @@ error only.
 
 `npm test` from the repository root runs synthetic payload, download-policy,
 timing-marker, exclusive-output, cancellation, acquisition, and FFmpeg integration
-tests. It requires the skill's dependencies and FFmpeg but no account or browser.
+tests. It requires the skill's dependencies, FFmpeg and installed Edge, or Chrome
+with `PLAYBACK_TEST_BROWSER=chrome`, but no account. Browser tests are headless,
+muted and serve synthetic pages by interception, without live-site traffic.
 The CI matrix runs these on Windows, macOS, and Linux. A green fixture job does
 not establish real-account acquisition or rendering on that OS.
 

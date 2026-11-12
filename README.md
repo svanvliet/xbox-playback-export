@@ -7,10 +7,11 @@ browser. No hosted service, GUI, account login automation, or telemetry.
 
 ## Status
 
-**Experimental pre-release.** Supports explicitly imported presentation JSON and
-one fingerprint-pinned November 2026 site build. The original acquisition path
-was demonstrated locally; the packaged manual acquisition snippet is tested with
-synthetic state, not a fresh signed-in browser. Different builds fail closed.
+**Experimental pre-release.** The agent acquires your presentation with browser
+consent, renders it locally, and delivers the MP4. No manual JSON/DevTools step
+is needed in the normal flow. One November 2026 site build is fingerprint-pinned.
+Automated acquisition/download is verified on a synthetic browser page, not a
+fresh signed-in live site. Different builds fail closed.
 
 ## Install
 
@@ -26,7 +27,7 @@ The root `plugin.json` uses Agent Plugins 1.0 for compatible Copilot/OpenAI host
 copilot plugin install svanvliet/xbox-playback-export
 ```
 
-Restart or open a session and ask it to export your Xbox Playback JSON. Older CLI
+Restart or open a session and ask it to export your Xbox Playback video. Older CLI
 versions may need an update for Agent Plugins 1.0. Installation does not run npm
 or grant local tool permissions; the skill walks through setup when used.
 
@@ -73,21 +74,37 @@ See [prerequisites and Windows instructions](skills/xbox-playback-export/referen
 git clone https://github.com/svanvliet/xbox-playback-export.git
 cd xbox-playback-export
 npm ci --prefix skills/xbox-playback-export --ignore-scripts --no-audit --no-fund
-node skills/xbox-playback-export/scripts/cli.mjs validate --input "/private/presentation.json"
-node skills/xbox-playback-export/scripts/cli.mjs export --input "/private/presentation.json" --output "/private/playback.mp4"
+node skills/xbox-playback-export/scripts/cli.mjs export --url "https://www.xbox.com/en-US/playback" --consent headed --output "/private/playback.mp4"
 ```
 
 Choose a new output filename in an existing folder. PowerShell uses the same
 commands; replace paths with quoted Windows paths. Use `--quality share` for a
 smaller file or `--browser chrome` instead of installed Edge. No Playwright browser
-download is required. Export records in real time, then encodes.
+download is required. URL mode requires prior browser consent; sign in directly
+in its separate window. Export records in real time, then encodes.
 
-## Obtain your JSON
+## Export without managing JSON
 
-Follow the [reviewable manual acquisition procedure](skills/xbox-playback-export/references/acquisition.md)
-in your own signed-in Xbox Playback tab. It downloads only the loaded presentation
-prop, not your browser session. Or supply a presentation JSON you already exported.
-Acquisition is explicit and version-specific, not an automatic API integration.
+Ask your agent to export your Xbox Playback. After permission, it prefers
+supported computer-use on your selected loaded tab, then supported browser tools.
+When those capabilities are absent, it can open a separate muted Playwright
+browser where **you** sign in and load Playback:
+
+```sh
+node skills/xbox-playback-export/scripts/cli.mjs export --url "https://www.xbox.com/en-US/playback" --consent headed --output "/private/playback.mp4"
+```
+
+Use your official Playback page URL; the example is not a verified live entrypoint.
+The flag records prior permission, not a way to bypass approval. The helper waits
+up to ten minutes, extracts only allowlisted presentation data into memory, closes
+its own browser, then renders silently. It never collects credentials or uses
+your everyday browser profile. Denials and permission failures stop the workflow,
+not trigger a workaround.
+
+See [agent-assisted acquisition and tool handoff](skills/xbox-playback-export/references/acquisition.md).
+An installed skill does not grant browser tools or local execution. If tools are
+missing, the agent explains the limitation. `--input` remains an advanced/recovery
+option, not a required user-managed JSON step.
 
 ## What the export does
 
@@ -112,8 +129,10 @@ claude plugin validate .
 ```
 
 Synthetic tests cover input/asset boundaries, scene selection, marker parsing,
-cancelled processes, safe output, acquisition selection, and actual FFmpeg
-encoding. Windows/macOS/Linux fixture CI is not real-account rendering evidence.
+cancelled processes, safe output, allowlisted acquisition, real headless synthetic
+page/Blob download, and actual FFmpeg encoding. Tests require installed Edge
+(`PLAYBACK_TEST_BROWSER=chrome` selects installed Chrome). Windows/macOS/Linux
+fixture CI is not live-account acquisition or rendering evidence.
 English macOS/Edge is the real-fixture validation target; Windows real-account
 exports and installed-host integration remain experimental.
 
