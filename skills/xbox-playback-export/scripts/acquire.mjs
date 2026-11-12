@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
-import { chromium } from 'playwright';
 import { validatePayload } from './payload.mjs';
 
 export const extractionSource = await fs.readFile(new URL('../references/acquire.js', import.meta.url), 'utf8');
@@ -128,27 +127,4 @@ export async function acquireFromPage(page, { signal, timeoutMs = 600000 } = {})
       }
     })()]);
   } finally { combined.removeEventListener('abort', abort); }
-}
-
-export async function acquirePresentation(url, { consent, channel = 'msedge', signal, timeoutMs = 600000 } = {}) {
-  validatePageUrl(url);
-  if (consent !== 'headed') throw new Error('Explicit permission for a separate visible browser is required (--consent headed).');
-  signal?.throwIfAborted();
-  let browser;
-  try { browser = await chromium.launch({ channel, headless: false, args: ['--mute-audio'], timeout: 30000 }); }
-  catch { throw new Error('Cannot open the consented installed browser. Respect host permission failures; do not attach to another browser.'); }
-  const close = () => { void browser.close().catch(() => {}); };
-  signal?.addEventListener('abort', close, { once: true });
-  try {
-    signal?.throwIfAborted();
-    const context = await browser.newContext({ acceptDownloads: false });
-    const page = await context.newPage();
-    console.log('In the separate browser, sign in yourself and load your Playback presentation. Waiting up to ten minutes; no credentials are collected.');
-    try { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }); }
-    catch { throw new Error('Cannot open the chosen Xbox Playback page; acquisition stopped.'); }
-    return await acquireFromPage(page, { signal, timeoutMs });
-  } finally {
-    signal?.removeEventListener('abort', close);
-    await browser.close();
-  }
 }

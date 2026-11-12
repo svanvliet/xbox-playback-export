@@ -28,14 +28,15 @@ Check `node --version`, `ffmpeg -version`, and `ffprobe -version`. From a clone:
 ```sh
 npm ci --prefix skills/xbox-playback-export --ignore-scripts --no-audit --no-fund
 node skills/xbox-playback-export/scripts/cli.mjs --help
-node skills/xbox-playback-export/scripts/cli.mjs export --url "https://www.xbox.com/en-US/playback" --consent headed --output "/private/playback.mp4"
 ```
 
-URL acquisition requires prior permission to open a separate visible browser.
-The user signs in themselves and loads their presentation; no JSON file is
-needed. Use the user's selected official Playback URL, not a guessed account
-link. See [acquisition](acquisition.md) for preferred existing-tab tool support,
-consent boundaries, and evidence limits. For advanced/recovery imports only:
+Acquisition prefers installed Edge and always uses the approved normal
+default-profile window through host computer-use/browser tools. The agent handles
+the private JSON handoff; users do not manage JSON or DevTools. If no supported
+tool can access that window, stop rather than open a separate profile. The removed
+`--url` mode now returns an explicit error. See [acquisition](acquisition.md) for
+tool support, consent boundaries and evidence limits. For agent-acquired inputs
+or advanced/recovery imports:
 
 ```sh
 node skills/xbox-playback-export/scripts/cli.mjs validate --input "/private/presentation.json"
@@ -49,11 +50,10 @@ Chrome or `--quality share` for a smaller encode.
 
 The export records in real time, then encodes. Leave the computer awake and allow
 a few minutes, several GB of temporary space, and network access. The browser
-stays headless and muted during rendering; separate URL acquisition is visible
-and muted until the user finishes loading Playback. Browser profiles, cookies and
-login state are never exported/imported. Acquisition's fresh nonpersistent browser
-necessarily handles the user's sign-in internally, but the helper never reads or
-persists session state. No local server or exposed debugging listener is started.
+stays headless, muted and isolated during rendering, without account state.
+Acquisition uses the user's normal default-profile browser through approved host
+tools, without copying profiles, exporting cookies or reading login/MFA fields.
+No new acquisition profile, local server or exposed debugging listener is started.
 
 ## Limits and failure behavior
 

@@ -7,14 +7,23 @@ their documented evaluation/download APIs; do not assume common tool names.
 
 ## Select a consented path
 
-Prefer available computer-use on the user's explicitly selected, already-loaded
+Prefer Microsoft Edge (`msedge`) whenever installed. Use Chrome only if Edge is
+absent or explicitly selected by the user. **Acquisition always uses that browser's
+normal default profile**, preferably the existing signed-in Playback tab. Never
+create a separate, temporary, guest, incognito, or copied acquisition profile.
+Confirm the actual selected window/profile using the host integration or native
+UI; a tool reporting "Edge" or "Chrome" does not establish default-profile access.
+If the profile cannot be confirmed, ask the user to select it rather than guess.
+
+Prefer available computer-use on that explicitly selected, already-loaded
 Xbox Playback tab. Ask and wait before controlling it. Use only that computer-use
 server for all observations/actions on that browser. If supported by its policy,
 the agent may run the reviewed expression through its page-evaluation API or
 enter it into the tab's console using that server and handle the Blob download
 through native UI. Never ask the user to paste code or bypass a console warning.
 If the server is UI-only and this operation is not supported, explain the missing
-capability and offer the separate session below, with its own consent.
+capability. Browser-tool fallback must still access the approved default-profile
+window; it must not substitute a newly launched isolated session.
 
 Supported browser tools are another path, but require explicit permission before
 attaching or controlling a browser. Use their documented evaluation and completed
@@ -25,30 +34,25 @@ flags, killing their browser, or public debugging listeners.
 **Fallback is for absent capabilities or a recoverable session loss only.**
 A refusal, user denial, missing OS permission, policy restriction, unsupported
 build, or invalid payload is a stop, not permission to try a different tool.
-After a recoverable session loss, explain it and obtain consent for a distinct
-session; do not silently reopen anything. A cancelled acquisition stays cancelled.
+After a recoverable session loss, explain it and obtain consent before reconnecting
+through a supported integration to the default-profile window. Do not silently
+reopen anything. A cancelled acquisition stays cancelled.
 
-## Separate Playwright browser: executable default fallback
+## No separate-profile fallback
 
-After permission for a fresh visible browser, the agent runs:
+The previous `export --url ... --consent headed` mode is removed. Old invocations
+fail explicitly before launching a browser; they do not silently create a clean
+profile. The renderer still uses installed Edge by default in a **fresh silent
+headless context**, keeping account state out of downloaded assets and recordings.
+That isolated renderer is not used for acquisition or sign-in.
 
-```sh
-node "SKILL_DIR/scripts/cli.mjs" export --url "https://www.xbox.com/en-US/playback" --consent headed --output "/private/playback.mp4"
-```
-
-Use the official Playback URL selected with the user; the URL above is an example,
-not a validated current entrypoint. The helper checks HTTPS `www.xbox.com`, no
-credentials/nonstandard port, and a locale-optional `/playback` path. `--browser
-chrome` selects installed Chrome instead of Edge. No browser download is needed.
-The flag records consent already obtained; it is not permission itself.
-
-The muted browser is a fresh, isolated, nonpersistent session. The user signs in
-directly and opens their presentation; the agent does not read or fill login,
-password, or MFA fields. The helper inspects presentation data only once on an
-official Playback page. It waits at most ten minutes, fails on unsupported data,
-and closes only its own browser. It then renders with the existing silent
-headless renderer. Presentation data stays in process memory; there is no JSON
-file for the user to manage. Closing the tab, timeout, or Ctrl+C stops acquisition.
+Plain Playwright launch/newContext does not reuse an existing default profile.
+Pointing a new automation process at the daily profile can conflict with profile
+locks and browser debugging restrictions; this plugin does not do it. It also
+does not copy that profile, export cookies, or restart the user's browser with
+debugging flags. If no approved tool can access the default-profile tab and provide
+the private handoff below, report the missing capability and stop. An explicit
+already-exported JSON is still supported for recovery.
 
 ## Existing tool session: shared expression and private handoff
 
@@ -59,7 +63,8 @@ JSON through a tool's chat transcript. Prefer a completed download saved directl
 to an agent-created private job folder outside the repo.
 
 For browser tools that explicitly support a Playwright `page`, local module
-imports, and filesystem access on the **same local host**, execute this function
+imports, and filesystem access on the **same local host**, and whose `page` is
+confirmed to be the approved default-profile tab, execute this function
 through that tool's documented code primitive. Replace `SKILL_DIR` with the actual
 installed absolute directory; do not assume this code primitive exists:
 
@@ -97,8 +102,8 @@ and `export --input ... --output ...`. Do not guess paths, parse partial downloa
 use a shared downloads folder, or collect unrelated files. After export or
 cancellation, delete only the agent-owned JSON and job directory. Respect
 Windows ACLs; POSIX mode bits alone do not establish Windows access control.
-If the tools cannot provide a private local handoff, use the separate session
-with consent, or explain the missing capability.
+If the tools cannot provide a private local handoff from the default-profile tab,
+explain the missing capability and stop. Do not replace it with a new profile.
 
 ## Bounded data and evidence
 

@@ -74,32 +74,38 @@ See [prerequisites and Windows instructions](skills/xbox-playback-export/referen
 git clone https://github.com/svanvliet/xbox-playback-export.git
 cd xbox-playback-export
 npm ci --prefix skills/xbox-playback-export --ignore-scripts --no-audit --no-fund
-node skills/xbox-playback-export/scripts/cli.mjs export --url "https://www.xbox.com/en-US/playback" --consent headed --output "/private/playback.mp4"
+```
+
+For the normal experience, ask your agent to acquire the presentation using the
+default-profile browser handoff below. For an already-exported recovery input:
+
+```sh
+node skills/xbox-playback-export/scripts/cli.mjs export --input "/private/presentation.json" --output "/private/playback.mp4"
 ```
 
 Choose a new output filename in an existing folder. PowerShell uses the same
 commands; replace paths with quoted Windows paths. Use `--quality share` for a
 smaller file or `--browser chrome` instead of installed Edge. No Playwright browser
-download is required. URL mode requires prior browser consent; sign in directly
-in its separate window. Export records in real time, then encodes.
+download is required. Export records in real time, then encodes.
 
 ## Export without managing JSON
 
-Ask your agent to export your Xbox Playback. After permission, it prefers
-supported computer-use on your selected loaded tab, then supported browser tools.
-When those capabilities are absent, it can open a separate muted Playwright
-browser where **you** sign in and load Playback:
+Ask your agent to export your Xbox Playback. It prefers installed **Microsoft
+Edge (`msedge`)** and always uses the selected browser's **normal default profile
+for acquisition**, keeping your existing sign-in. After permission, it uses
+supported computer-use on your selected loaded tab, or browser tools confirmed
+to access that same default-profile window. Chrome is used only if Edge is absent
+or you explicitly select Chrome.
 
-```sh
-node skills/xbox-playback-export/scripts/cli.mjs export --url "https://www.xbox.com/en-US/playback" --consent headed --output "/private/playback.mp4"
-```
+There is **no separate-profile acquisition fallback**. If tools cannot access
+your default-profile tab, the agent stops and explains the missing capability
+instead of opening an isolated browser and asking you to sign in again. The old
+`--url ... --consent headed` mode now fails explicitly. No copying profiles,
+exporting cookies, or restarting your browser with debugging flags.
 
-Use your official Playback page URL; the example is not a verified live entrypoint.
-The flag records prior permission, not a way to bypass approval. The helper waits
-up to ten minutes, extracts only allowlisted presentation data into memory, closes
-its own browser, then renders silently. It never collects credentials or uses
-your everyday browser profile. Denials and permission failures stop the workflow,
-not trigger a workaround.
+Once the agent has acquired the bounded private presentation data, rendering
+still uses a fresh muted headless browser without account state. The default
+profile is used for acquisition only, not for rendering or asset downloads.
 
 See [agent-assisted acquisition and tool handoff](skills/xbox-playback-export/references/acquisition.md).
 An installed skill does not grant browser tools or local execution. If tools are

@@ -10,10 +10,10 @@ import { validatePayload, selectScenes, readPayload } from '../skills/xbox-playb
 import { AssetCache, validateUrl } from '../skills/xbox-playback-export/scripts/assets.mjs';
 import { parseMarkers, audioTiming } from '../skills/xbox-playback-export/scripts/encode.mjs';
 import { markerColors } from '../skills/xbox-playback-export/scripts/record.mjs';
-import { parseArgs, publishFile } from '../skills/xbox-playback-export/scripts/cli.mjs';
+import { main, parseArgs, publishFile } from '../skills/xbox-playback-export/scripts/cli.mjs';
 import { verifyDigest, replaceOnce, patchRoute } from '../skills/xbox-playback-export/scripts/adapter.mjs';
 import { run } from '../skills/xbox-playback-export/scripts/process.mjs';
-import { extractionSource, acquireFromPage, acquirePresentation, savePresentationFromPage, validatePageUrl } from '../skills/xbox-playback-export/scripts/acquire.mjs';
+import { extractionSource, acquireFromPage, savePresentationFromPage, validatePageUrl } from '../skills/xbox-playback-export/scripts/acquire.mjs';
 
 const uri = 'https://assets-xbxweb.xbox.com/synthetic.mp4';
 export function fixture() {
@@ -238,20 +238,21 @@ test('acquisition allowlists every nested field and never invokes extra auth get
   assert.throws(extract, /INVALID_DATA/);
 });
 
-test('URL acquisition requires explicit consent and rejects unsafe page locations before launching', async () => {
+test('Edge remains the default renderer and legacy URL acquisition cannot open a separate profile', async () => {
   for (const url of ['http://www.xbox.com/en-US/playback', 'https://xbox.com/en-US/playback',
     'https://www.xbox.com:8443/playback', 'https://name:secret@www.xbox.com/playback',
     'https://www.xbox.com/en-US/playback-fake', 'https://evil.invalid/playback']) {
     assert.throws(() => validatePageUrl(url));
   }
-  await assert.rejects(acquirePresentation('https://www.xbox.com/en-US/playback'), /permission/);
-  assert.equal(parseArgs(['export', '--url', 'https://www.xbox.com/en-US/playback', '--consent', 'headed', '--output', 'a.mp4']).consent, 'headed');
+  assert.equal(parseArgs(['export', '--input', 'a.json', '--output', 'a.mp4']).browser, 'msedge');
+  await assert.rejects(main(['export', '--url', 'https://www.xbox.com/en-US/playback', '--consent', 'headed', '--output', 'a.mp4']),
+    /existing Edge default-profile tab/);
   for (const options of [
     ['--url', 'https://www.xbox.com/en-US/playback'],
     ['--url', 'https://www.xbox.com/en-US/playback', '--consent', 'yes'],
     ['--input', 'a.json', '--consent', 'headed'],
     ['--input', 'a.json', '--url', 'https://www.xbox.com/playback', '--consent', 'headed'],
-  ]) assert.throws(() => parseArgs(['export', '--output', 'a.mp4', ...options]));
+  ]) assert.throws(() => parseArgs(['export', '--output', 'a.mp4', ...options]), /no longer opens a separate profile/);
 });
 
 test('acquisition stops on refusal/unsupported pages, bounds waiting, and never opens a fallback browser', async () => {

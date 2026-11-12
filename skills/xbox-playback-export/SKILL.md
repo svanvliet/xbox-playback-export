@@ -18,15 +18,22 @@ Do not silently adapt to a new site build.
    do not ask the user to create, find, rename, or paste JSON or use DevTools.
    Reuse an explicitly provided input only for advanced/recovery use.
    Discover the host's available computer-use/browser tools and read their actual
-   capabilities. Ask and wait for permission before controlling an explicitly
-   selected existing Playback tab, attaching to a browser, or opening a separate
-   visible browser. The coding/install request is not browser permission.
-   Prefer computer-use on that selected tab if it supports the bounded extraction
+   capabilities. Prefer Microsoft Edge (`msedge`) whenever installed; use Chrome
+   only if Edge is absent or the user explicitly selects Chrome. For acquisition,
+   always use the selected browser's normal default profile and existing signed-in
+   window, never a separate, temporary, guest, incognito, or copied profile.
+   Confirm the actual window/profile through the host integration or native UI;
+   do not assume a Playwright tool's fresh browser is the user's default profile.
+   Ask and wait for permission before controlling the selected Playback tab or
+   attaching through a supported browser integration. The coding/install request
+   is not browser permission. Prefer computer-use on that tab for bounded extraction
    and private download handoff in [references/acquisition.md](references/acquisition.md).
    Once controlled with computer-use, observe/control it only through that server.
    Do not silently attach Playwright/CDP to it.
-   If capability is absent, use supported browser tools or request permission for
-   the separate Playwright-managed browser below. Never fall back after user
+   If capability is absent, use supported browser tools only if they can access
+   that approved default-profile window. Otherwise stop and explain the missing
+   capability; do not launch a separate profile or make the user sign in again.
+   Never fall back after user
    denial, missing OS permission, native refusal, policy restrictions, an
    unsupported build, or malformed data. Explain the blocker instead.
    The user handles Microsoft sign-in/MFA directly. Never read credentials,
@@ -43,26 +50,16 @@ Do not silently adapt to a new site build.
    Do not automatically download Playwright browsers. The default uses installed
    Edge; `--browser chrome` uses installed Chrome. See
    [references/usage.md](references/usage.md) for prerequisites.
-4. If the approved existing-tab path is unavailable, acquire and export in one
-   command using a separate fresh browser, after consent for that distinct session.
-   Use the user's official Xbox Playback URL (not a guessed personalized link):
-
-   ```sh
-   node "SKILL_DIR/scripts/cli.mjs" export --url "https://www.xbox.com/en-US/playback" --consent headed --output "/private/playback.mp4"
-   ```
-
-   `--consent headed` records permission already obtained, never grants it.
-   The acquisition browser is visible but muted; tell the user to sign in and
-   load their presentation there. The helper waits up to ten minutes, reads only
-   the bounded allowlisted presentation prop, closes its own browser, then
-   renders silently. No intermediate JSON is needed or saved.
-   Do not interact with login/MFA/password fields. Do not copy daily profiles,
-   enable debugging on a user's browser, or expose a debugging listener.
-5. Alternatively, when acquiring through an existing approved browser tool, use the shared
+4. Acquire through the approved default-profile browser tool using the shared
    `references/acquire.js` function and private completed-download handoff in the
    acquisition reference. The agent chooses a new file in its private job folder,
    validates it, exports, then removes only its owned temporary input/folder.
-   Do not put evaluated presentation data in chat/tool logs. For explicit imports:
+   Never launch Playwright against the daily profile directory, copy that profile,
+   enable debugging on the user's browser, or expose a debugging listener. Do not
+   interact with login/MFA/password fields or close the user's tabs. The removed
+   `--url`/`--consent headed` mode fails explicitly rather than opening a new profile.
+   Do not put evaluated presentation data in chat/tool logs.
+5. Validate and export the agent-acquired input (or an explicit recovery import):
 
    ```sh
    node "SKILL_DIR/scripts/cli.mjs" validate --input "/private/presentation.json"
@@ -77,7 +74,8 @@ Do not silently adapt to a new site build.
    ```
 
    Default quality is H.264 CRF 18; use `--quality share` for CRF 21. The fresh
-   headless browser is muted. No existing browser profile is used. Interactive
+   rendering browser is headless, muted and isolated, without login data. The
+   default-profile requirement applies to acquisition, not rendering. Interactive
    holds become three seconds; Music and Mobile_rotate are not video scenes.
    TopPerformer is included only for a valid numeric top percentage in (0, 50].
    The final Outro loop shows background only, not sharing controls.
